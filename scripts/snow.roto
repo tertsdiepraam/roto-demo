@@ -1,0 +1,33 @@
+fn add(time: f32) {
+    let i = 0;
+    while i < 20 {
+        let x = f32.rand(-30.0, 30.0);
+        let y = 20.0;
+        let z = f32.rand(-10.0, 10.0);
+
+        let c = (z + 10.0) / 20.0;
+
+        emit(Particle.new(
+            Vec3.new(x, y, z),
+            0.2,
+            Color.new(c, c, c),
+        ));
+
+        i = i + 1;
+    }
+}
+
+fn update(time: f32, p: Particle) -> Particle? {
+    if p.pos().y() < -20.0 {
+        return None;
+    }
+
+    let wind = Vec3.new(0.02, 0.0, 0.0);
+    let gravity = Vec3.new(0.0, -0.05, 0.0);
+
+    let pos = p.pos().add(gravity).add(wind);
+    let scale = p.scale();
+    let color = p.color();
+
+    Some(Particle.new(pos, scale, color))
+}

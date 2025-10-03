@@ -1,0 +1,28 @@
+fn add(_time: f32) {
+    let x = f32.rand(-10.0, 10.0);
+    let y = f32.rand(-10.0, 10.0);
+    let color = Color.new(
+        f32.rand(0.0, 1.0),
+        f32.rand(0.0, 1.0),
+        f32.rand(0.0, 1.0),
+    );
+    emit(Particle.new(
+        Vec3.new(x, y, 0.0),
+        1.0,
+        color,
+    ));
+}
+
+fn update(time: f32, p: Particle) -> Particle? {
+    let lifetime = 10.0;
+    if time > lifetime {
+        return None;
+    }
+
+    let t = time / lifetime;
+
+    let pos = p.pos();
+    let scale = 1.0 - (2.0 * t - 1.0).pow(2.0);
+    let color = p.color();
+    Some(Particle.new(pos, scale, color))
+}
