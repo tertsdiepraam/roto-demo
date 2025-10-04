@@ -1,9 +1,9 @@
 fn add(_time: f32) {
     let i =  0;
-    while i < 10 {
-        let x = f32.rand(0.9, 1.0);
+    while i < 20 {
+        let x = f32.rand(0.4, 1.0);
         let y = -10.0;
-        let z = f32.rand(0.9, 1.0);
+        let z = f32.rand(0.4, 1.0);
         let color = Color.new(
             f32.rand(0.0, 0.5),
             f32.rand(0.0, 0.5),
@@ -19,17 +19,25 @@ fn add(_time: f32) {
     }
 }
 
-fn rotate(v: Vec3, angle: f32) -> Vec3 {
-    let x = v.x();
-    let z = v.z();
-    let x2 = x * angle.cos() - z * angle.sin();
-    let z2 = x * angle.sin() + z * angle.cos();
-    Vec3.new(x2, v.y(), z2)
+type Vec2 {
+    x: f32,
+    y: f32,
+}
+
+fn rotate(v: Vec2, angle: f32) -> Vec2 {
+    let x = v.x;
+    let y = v.y;
+    let cos = angle.cos();
+    let sin = angle.sin();
+    let x2 = x * cos - y * sin;
+    let y2 = x * sin + y * cos;
+    Vec2 { x: x2, y: y2 }
 }
 
 fn update(time: f32, p: Particle) -> Particle? {
     let lifetime = 20.0;
-    let speed: f32 = -0.1;
+    let speed: f32 = 0.1;
+
     if time > lifetime {
         return None;
     }
@@ -37,15 +45,19 @@ fn update(time: f32, p: Particle) -> Particle? {
     let t = time / lifetime;
 
     let pos = p.pos();
+    let x = pos.x();
+    let z = pos.z();
     let rot_pos = rotate(
-        pos,
-        speed / Vec3.new(pos.x(), 0.0, pos.z()).length(),
+        Vec2 { x: x, y: z },
+        speed,
     );
-    let scale_factor = 1.002;
+
+    let f: f32 = 5.0;
+    let scale_factor = f.pow(1.0 / (lifetime * 60.0));
     let new_pos = Vec3.new(
-        scale_factor * rot_pos.x(),
-        0.02 + rot_pos.y(),
-        scale_factor * rot_pos.z(),
+        scale_factor * rot_pos.x,
+        26.0 * t - 10.0,
+        scale_factor * rot_pos.y,
     );
 
     let scale = t.pow(0.5);

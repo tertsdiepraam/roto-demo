@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::Mutex,
-    time::SystemTime,
+    time::{Instant, SystemTime},
 };
 
 use bevy::{
@@ -30,6 +30,7 @@ fn main() {
             },
         ))
         .add_systems(Startup, setup)
+        .add_systems(Startup, time_in_roto_setup)
         .add_systems(
             FixedUpdate,
             (
@@ -37,6 +38,7 @@ fn main() {
                 add_particles,
                 update_particles,
                 update_instances,
+                time_in_roto_update,
             ),
         )
         .run();
@@ -69,7 +71,9 @@ struct ScriptManager {
     last_compile: SystemTime,
     script_not_found_logged: bool,
     update: Option<TypedFunc<(), UpdateFn>>,
+    update_ms: f32,
     add: Option<TypedFunc<(), AddFn>>,
+    add_ms: f32,
 }
 
 impl ScriptManager {
@@ -182,7 +186,9 @@ impl ScriptManager {
             last_compile: SystemTime::UNIX_EPOCH,
             script_not_found_logged: false,
             update: None,
+            update_ms: 0.0,
             add: None,
+            add_ms: 0.0,
         }
     }
 
@@ -232,7 +238,7 @@ impl ScriptManager {
 
 fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(0.5))),
+        Mesh3d(meshes.add(Circle::new(0.5))),
         InstanceMaterialData(Vec::new()),
         NoFrustumCulling,
     ));
@@ -256,22 +262,26 @@ fn reload_script(mut manager: ResMut<ScriptManager>) {
 
 fn add_particles(
     time: Res<Time>,
-    manager: Res<ScriptManager>,
+    mut manager: ResMut<ScriptManager>,
     mut particles: Single<&mut Particles>,
 ) {
     if let Some(add) = &manager.add {
+        let t1 = Instant::now();
         add.call(&mut (), time.elapsed_secs());
+        let t2 = Instant::now();
+        let duration = t2 - t1;
+        manager.add_ms = (duration.as_secs_f64() * 1000.0) as f32;
     } else {
-        let mut rng = rand::rng();
-        let x = rng.random_range(-10.0..10.0);
-        let y = rng.random_range(-10.0..10.0);
+        // let mut rng = rand::rng();
+        // let x = rng.random_range(-10.0..10.0);
+        // let y = rng.random_range(-10.0..10.0);
 
-        let particle = Particle {
-            pos: Vec3 { x, y, z: 0. },
-            scale: 1.0,
-            color: Color::from(Srgba::RED),
-        };
-        EMITTER.lock().unwrap().push(particle);
+        // let particle = Particle {
+        //     pos: Vec3 { x, y, z: 0. },
+        //     scale: 1.0,
+        //     color: Color::from(Srgba::RED),
+        // };
+        // EMITTER.lock().unwrap().push(particle);
     }
 
     let mut e = EMITTER.lock().unwrap();
@@ -284,20 +294,15 @@ fn add_particles(
 }
 
 fn update_particles(
-    manager: Res<ScriptManager>,
+    mut manager: ResMut<ScriptManager>,
     time: Res<Time>,
     mut particles: Single<&mut Particles>,
 ) {
-    // Little guard against completely bogging the system down
-    particles.0.retain(|p| {
-        let t = time.elapsed_secs() - p.start_time;
-        t < 100.0
-    });
-
     let Some(update) = &manager.update else {
         return;
     };
 
+    let t1 = Instant::now();
     particles.0.retain_mut(|p| {
         let t = time.elapsed_secs() - p.start_time;
         let particle = p.particle.clone();
@@ -309,7 +314,10 @@ fn update_particles(
         } else {
             false
         }
-    })
+    });
+    let t2 = Instant::now();
+    let duration = t2 - t1;
+    manager.update_ms = (duration.as_secs_f64() * 1000.0) as f32;
 }
 
 fn update_instances(
@@ -324,5 +332,75 @@ fn update_instances(
         i.position = p.particle.pos;
         i.scale = p.particle.scale;
         i.color = LinearRgba::from(p.particle.color).to_f32_array();
+    }
+}
+
+#[derive(Component, Clone, Copy)]
+enum TimeInRotoText {
+    Add,
+    Update,
+    Particles,
+}
+
+fn time_in_roto_setup(mut commands: Commands) {
+    commands
+        .spawn((
+            Node {
+                // We need to make sure the overlay doesn't affect the position of other UI nodes
+                position_type: PositionType::Absolute,
+                flex_direction: FlexDirection::Column,
+                right: px(0),
+                align_items: AlignItems::End,
+                ..Default::default()
+            },
+            // Render overlay on top of everything
+            GlobalZIndex(i32::MAX - 32),
+            Pickable::IGNORE,
+        ))
+        .with_children(|p| {
+            p.spawn((
+                Text::new("Add: "),
+                TextColor(Color::from(Srgba::WHITE)),
+                TimeInRotoText::Add,
+                Pickable::IGNORE,
+            ))
+            .with_child(TextSpan::default())
+            .with_child(TextSpan::new("ms"));
+            p.spawn((
+                Text::new("Update: "),
+                TextColor(Color::from(Srgba::WHITE)),
+                TimeInRotoText::Update,
+                Pickable::IGNORE,
+            ))
+            .with_child(TextSpan::default())
+            .with_child(TextSpan::new("ms"));
+            p.spawn((
+                Text::new("Particles: "),
+                TextColor(Color::from(Srgba::WHITE)),
+                TimeInRotoText::Particles,
+                Pickable::IGNORE,
+            ))
+            .with_child(TextSpan::default());
+        });
+}
+
+fn time_in_roto_update(
+    query: Query<(Entity, &TimeInRotoText)>,
+    mut writer: TextUiWriter,
+    manager: Res<ScriptManager>,
+    particles: Single<&Particles>,
+) {
+    for (entity, time_in_roto) in &query {
+        match time_in_roto {
+            TimeInRotoText::Add => {
+                *writer.text(entity, 1) = format!("{:>6.2}", manager.add_ms);
+            }
+            TimeInRotoText::Update => {
+                *writer.text(entity, 1) = format!("{:>6.2}", manager.update_ms);
+            }
+            TimeInRotoText::Particles => {
+                *writer.text(entity, 1) = format!("{:>8}", particles.0.len());
+            }
+        }
     }
 }

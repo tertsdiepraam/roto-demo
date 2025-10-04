@@ -1,6 +1,6 @@
 fn add(time: f32) {
     let i = 0;
-    while i < 20 {
+    while i < 40 {
         let x = f32.rand(-30.0, 30.0);
         let y = 20.0;
         let z = f32.rand(-10.0, 10.0);
