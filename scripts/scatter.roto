@@ -1,18 +1,23 @@
-fn add(_time: f32) {
+# Called every frame
+fn add(time: f32) {
     let x = f32.rand(-10.0, 10.0);
     let y = f32.rand(-10.0, 10.0);
+    let z = f32.rand(-10.0, 10.0);
+
     let color = Color.new(
         f32.rand(0.0, 1.0),
         f32.rand(0.0, 1.0),
         f32.rand(0.0, 1.0),
     );
+
     emit(Particle.new(
-        Vec3.new(x, y, 0.0),
-        1.0,
+        Vec3.new(x, y, z),
+        0.0,
         color,
     ));
 }
 
+# Called for every particle on every frame
 fn update(time: f32, p: Particle) -> Particle? {
     let lifetime = 10.0;
     if time > lifetime {
@@ -26,3 +31,5 @@ fn update(time: f32, p: Particle) -> Particle? {
     let color = p.color();
     Some(Particle.new(pos, scale, color))
 }
+
+

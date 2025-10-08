@@ -1,20 +1,18 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Mutex,
-    time::{Instant, SystemTime},
-};
+use std::{path::Path, sync::Mutex, time::Instant};
 
 use bevy::{
     camera::visibility::NoFrustumCulling,
     dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin},
+    input::mouse::{AccumulatedMouseMotion, MouseWheel},
     prelude::*,
     render::view::NoIndirectDrawing,
 };
 use instancing::{CustomMaterialPlugin, InstanceData, InstanceMaterialData};
-use rand::Rng;
-use roto::{Runtime, TypedFunc, Val, library};
+use roto::Val;
+use script_manager::ScriptManager;
 
 mod instancing;
+mod script_manager;
 
 fn main() {
     let mut args = std::env::args();
@@ -41,6 +39,7 @@ fn main() {
                 time_in_roto_update,
             ),
         )
+        .add_systems(Update, orbit)
         .run();
 }
 
@@ -61,184 +60,9 @@ struct Particle {
     color: Color,
 }
 
-type UpdateFn = fn(f32, Val<Particle>) -> Option<Val<Particle>>;
-type AddFn = fn(f32);
-
-#[derive(Resource)]
-struct ScriptManager {
-    runtime: Runtime,
-    path: PathBuf,
-    last_compile: SystemTime,
-    script_not_found_logged: bool,
-    update: Option<TypedFunc<(), UpdateFn>>,
-    update_ms: f32,
-    add: Option<TypedFunc<(), AddFn>>,
-    add_ms: f32,
-}
-
-impl ScriptManager {
-    fn new(path: &Path) -> Self {
-        let lib = library! {
-            #[copy] type Vec3 = Val<Vec3>;
-            #[copy] type Color = Val<Color>;
-            #[clone] type Particle = Val<Particle>;
-
-            fn emit(particle: Val<Particle>) {
-                EMITTER.lock().unwrap().push(particle.0);
-            }
-
-            impl Val<Particle> {
-                fn new(pos: Val<Vec3>, scale: f32, color: Val<Color>) -> Val<Particle> {
-                    Val(Particle { pos: pos.0, scale, color: color.0 })
-                }
-
-                fn pos(p: Val<Particle>) -> Val<Vec3> {
-                    Val(p.pos)
-                }
-
-                fn scale(p: Val<Particle>) -> f32 {
-                    p.scale
-                }
-
-                fn color(p: Val<Particle>) -> Val<Color> {
-                    Val(p.color)
-                }
-            }
-
-            impl Val<Vec3> {
-                fn new(x: f32, y: f32, z: f32) -> Val<Vec3> {
-                    Val(Vec3 { x, y, z })
-                }
-
-                fn add(Val(x): Val<Vec3>, Val(y): Val<Vec3>) -> Val<Vec3> {
-                    Val(x + y)
-                }
-
-                fn x(v: Val<Vec3>) -> f32 {
-                    v.x
-                }
-
-                fn y(v: Val<Vec3>) -> f32 {
-                    v.y
-                }
-
-                fn z(v: Val<Vec3>) -> f32 {
-                    v.z
-                }
-
-                fn length(v: Val<Vec3>) -> f32 {
-                    v.length()
-                }
-
-                fn normalize(Val(v): Val<Vec3>) -> Val<Vec3> {
-                    Val(v.normalize())
-                }
-
-                fn scale(Val(v): Val<Vec3>, r: f32) -> Val<Vec3> {
-                    Val(r * v)
-                }
-            }
-
-            impl Val<Color> {
-                fn red() -> Val<Color> {
-                    Val(Color::from(Srgba::RED))
-                }
-
-                fn none() -> Val<Color> {
-                    Val(Color::from(Srgba::NONE))
-                }
-
-                fn new(r: f32, g: f32, b: f32) -> Val<Color> {
-                    Val(Color::from(Srgba::new(r, g, b, 1.0)))
-                }
-
-                fn mix(t: f32, Val(x): Val<Color>, Val(y): Val<Color>) -> Val<Color> {
-                    Val(x.mix(&y, t))
-                }
-            }
-
-            impl f32 {
-                fn rand(low: f32, high: f32) -> f32 {
-                    let mut rng = rand::rng();
-                    rng.random_range(low..high)
-                }
-
-                fn sin(x: f32) -> f32 {
-                    x.sin()
-                }
-
-                fn cos(x: f32) -> f32 {
-                    x.cos()
-                }
-
-                fn pi() -> f32 {
-                    std::f32::consts::PI
-                }
-            }
-        };
-
-        let mut runtime = Runtime::from_lib(lib).unwrap();
-        runtime.add_io_functions();
-
-        Self {
-            runtime,
-            path: path.to_path_buf(),
-            last_compile: SystemTime::UNIX_EPOCH,
-            script_not_found_logged: false,
-            update: None,
-            update_ms: 0.0,
-            add: None,
-            add_ms: 0.0,
-        }
-    }
-
-    fn reload(&mut self) {
-        let res = std::fs::metadata(&self.path);
-
-        let modified = match res.and_then(|md| md.modified()) {
-            Ok(modified) => modified,
-            Err(e) => {
-                self.last_compile = SystemTime::now();
-                if !self.script_not_found_logged {
-                    eprintln!("Script not found: {e}");
-                    self.script_not_found_logged = true;
-                }
-                return;
-            }
-        };
-
-        self.script_not_found_logged = false;
-
-        if self.last_compile > modified {
-            // We check this later than it was modified, just continue.
-            return;
-        }
-
-        self.last_compile = SystemTime::now();
-
-        let res = self.runtime.compile(&self.path);
-
-        let mut pkg = match res {
-            Ok(pkg) => pkg,
-            Err(e) => {
-                println!("{e}");
-                return;
-            }
-        };
-
-        if let Ok(update) = pkg.get_function("update") {
-            self.update = Some(update);
-        }
-
-        if let Ok(add) = pkg.get_function("add") {
-            self.add = Some(add);
-        }
-    }
-}
-
 fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     commands.spawn((
-        Mesh3d(meshes.add(Circle::new(0.5))),
+        Mesh3d(meshes.add(Sphere::new(0.5))),
         InstanceMaterialData(Vec::new()),
         NoFrustumCulling,
     ));
@@ -403,4 +227,67 @@ fn time_in_roto_update(
             }
         }
     }
+}
+
+#[derive(Debug, Resource)]
+struct CameraSettings {
+    pub pitch_speed: f32,
+    // Clamp pitch to this range
+    pub pitch_range: std::ops::Range<f32>,
+    pub roll_speed: f32,
+    pub yaw_speed: f32,
+}
+
+fn orbit(
+    mut camera: Single<&mut Transform, With<Camera>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mouse_motion: Res<AccumulatedMouseMotion>,
+    mut mouse_wheel_reader: MessageReader<MouseWheel>,
+    time: Res<Time>,
+) {
+    let pitch_limit = std::f32::consts::FRAC_PI_2 - 0.01;
+    let camera_settings = CameraSettings {
+        pitch_speed: 0.003,
+        pitch_range: -pitch_limit..pitch_limit,
+        roll_speed: 1.0,
+        yaw_speed: 0.004,
+    };
+
+    let delta = mouse_motion.delta;
+    let mut delta_roll = 0.0;
+    let mut delta_pitch = 0.0;
+    let mut delta_yaw = 0.0;
+
+    if mouse_buttons.pressed(MouseButton::Left) {
+        // Mouse motion is one of the few inputs that should not be multiplied by delta time,
+        // as we are already receiving the full movement since the last frame was rendered. Multiplying
+        // by delta time here would make the movement slower that it should be.
+        delta_pitch = -delta.y * camera_settings.pitch_speed;
+        delta_yaw = -delta.x * camera_settings.yaw_speed;
+    }
+
+    // Conversely, we DO need to factor in delta time for mouse button inputs.
+    delta_roll *= camera_settings.roll_speed * time.delta_secs();
+
+    // Obtain the existing pitch, yaw, and roll values from the transform.
+    let (yaw, pitch, roll) = camera.rotation.to_euler(EulerRot::YXZ);
+
+    // Establish the new yaw and pitch, preventing the pitch value from exceeding our limits.
+    let pitch = (pitch + delta_pitch).clamp(
+        camera_settings.pitch_range.start,
+        camera_settings.pitch_range.end,
+    );
+    let roll = roll + delta_roll;
+    let yaw = yaw + delta_yaw;
+    camera.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+
+    // Adjust the translation to maintain the correct orientation toward the orbit target.
+    // In our example it's a static target, but this could easily be customized.
+    let target = Vec3::ZERO;
+
+    let mut distance = camera.translation.length();
+    for mouse_wheel in mouse_wheel_reader.read() {
+        distance -= mouse_wheel.y * 0.1;
+    }
+    camera.translation = target - camera.forward() * distance;
 }

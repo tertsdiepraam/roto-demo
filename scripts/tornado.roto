@@ -1,6 +1,12 @@
-fn add(_time: f32) {
+type Vec2 {
+    x: f32,
+    y: f32,
+}
+
+# Called every frame
+fn add(time: f32) {
     let i =  0;
-    while i < 20 {
+    while i < 10 {
         let x = f32.rand(0.4, 1.0);
         let y = -10.0;
         let z = f32.rand(0.4, 1.0);
@@ -19,30 +25,16 @@ fn add(_time: f32) {
     }
 }
 
-type Vec2 {
-    x: f32,
-    y: f32,
-}
-
-fn rotate(v: Vec2, angle: f32) -> Vec2 {
-    let x = v.x;
-    let y = v.y;
-    let cos = angle.cos();
-    let sin = angle.sin();
-    let x2 = x * cos - y * sin;
-    let y2 = x * sin + y * cos;
-    Vec2 { x: x2, y: y2 }
-}
-
-fn update(time: f32, p: Particle) -> Particle? {
+# Called for every particle on every frame
+fn update(alive_time: f32, p: Particle) -> Particle? {
     let lifetime = 20.0;
     let speed: f32 = 0.1;
 
-    if time > lifetime {
+    if alive_time > lifetime {
         return None;
     }
 
-    let t = time / lifetime;
+    let t = alive_time / lifetime;
 
     let pos = p.pos();
     let x = pos.x();
@@ -52,7 +44,7 @@ fn update(time: f32, p: Particle) -> Particle? {
         speed,
     );
 
-    let f: f32 = 5.0;
+    let f: f32 = 10.0;
     let scale_factor = f.pow(1.0 / (lifetime * 60.0));
     let new_pos = Vec3.new(
         scale_factor * rot_pos.x,
@@ -64,3 +56,15 @@ fn update(time: f32, p: Particle) -> Particle? {
     let color = p.color();
     Some(Particle.new(new_pos, scale, color))
 }
+
+# Rotate a 2D vector by angle
+fn rotate(v: Vec2, angle: f32) -> Vec2 {
+    let x = v.x;
+    let y = v.y;
+    let cos = angle.cos();
+    let sin = angle.sin();
+    let x2 = x * cos - y * sin;
+    let y2 = x * sin + y * cos;
+    Vec2 { x: x2, y: y2 }
+}
+
