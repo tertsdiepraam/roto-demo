@@ -1,23 +1,33 @@
+# Called every frame to add new particles
+#
+# `time` is the time since the start of the simulation
 fn add(time: f32) {
     let scale = 0.01;
     let rotation_speed = -2.0;
     let variation = 0.1;
 
-    let angle = f32.rand(0.0, variation) + rotation_speed * time;
-    let x = scale * angle.cos();
-    let y = scale * angle.sin();
-    emit(Particle.new(
-        Vec3.new(x, y, 0.0),
-        1.0,
-        Color.red(),
-    ));
+    let i = 0;
+    while i < 5 {
+        let angle = f32.rand(0.0, variation) + rotation_speed * time;
+        let x = scale * angle.cos();
+        let y = scale * angle.sin();
+        emit(Particle.new(
+            Vec3.new(x, y, 0.0),
+            1.0,
+            Color.red(),
+        ));
+        i = i + 1;
+    }
 }
 
+# Called on every frame for every particle
+#
+# `time` is the time that the particle has been alive for
 fn update(time: f32, p: Particle) -> Particle? {
-    let lifetime = 40.0;
+    let lifetime = 30.0;
     let speed = 0.01;
     let color1 = Color.new(1.0, 0.0, 0.0);
-    let color2 = Color.new(1.0, 0.0, 1.0);
+    let color2 = Color.new(0.0, 1.0, 1.0);
     let x: i32 = 1;
 
     if time > lifetime {
@@ -32,7 +42,7 @@ fn update(time: f32, p: Particle) -> Particle? {
     
     let scale = 1.0 - (2.0 * t - 1.0).pow(2.0);
 
-    let color = Color.mix(t, color1, color2);
+    let color = Color.mix(t.pow(2.0), color1, color2);
 
     Some(Particle.new(pos, scale, color))
 } 
