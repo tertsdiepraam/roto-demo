@@ -1,6 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
-    time::SystemTime,
+    path::{Path, PathBuf}, time::SystemTime
 };
 
 use bevy::{
@@ -9,7 +8,7 @@ use bevy::{
     math::Vec3,
 };
 use rand::Rng;
-use roto::{Runtime, TypedFunc, Val, library};
+use roto::{library, location, Item, Library, Registerable, Runtime, TypedFunc, Val, Type, Function};
 
 use crate::{EMITTER, Particle};
 
@@ -30,14 +29,38 @@ pub struct ScriptManager {
 
 impl ScriptManager {
     pub fn new(path: &Path) -> Self {
-        let lib = library! {
+        // A library collects all types, functions, etc. that are made available to the roto script
+        let mut lib = Library::new();
+
+        // We can add Rust types to the library.
+        // The wrapper type `Val<T>` makes a registered type safe to pass to and from Roto. 
+        // We can rename the added type, in this example from Val<Particle> to Particle.
+        // Add a description for the docs that Roto can generate.
+        // Lastly, a location for error reporting during item registration (usually just the location! macro)
+        lib.add(
+            Item::Type(
+                Type::clone::<Val<Particle>>("Particle", "This is a Particle!", location!()).unwrap()
+            )
+        );
+
+        fn emit_new_particles(particle: Val<Particle>) {
+            EMITTER.lock().unwrap().push(particle.0);
+        }
+
+        // We can add functions too!
+        // Just as before we can (re-)name the function, add a description and aid the error reporting,
+        // Here we rename the function to just "emit", so Roto scripts can call `emit(Particle)`!
+        lib.add(
+            Item::Function(
+                Function::new("emit", "Emit a new particle", vec!["particle"], emit_new_particles, location!()).unwrap()
+            )
+        );
+    
+        // As you can see in the two examples above, this can get very tedious.
+        // Luckily there is the `library!` macro, that makes this process feel very natrual to Rust!
+        let lib_via_macro = library! {
             #[copy] type Vec3 = Val<Vec3>;
             #[copy] type Color = Val<Color>;
-            #[clone] type Particle = Val<Particle>;
-
-            fn emit(particle: Val<Particle>) {
-                EMITTER.lock().unwrap().push(particle.0);
-            }
 
             impl Val<Particle> {
                 fn new(pos: Val<Vec3>, scale: f32, color: Val<Color>) -> Self {
@@ -129,6 +152,10 @@ impl ScriptManager {
             }
         };
 
+        // Add the two libraries together
+        lib_via_macro.add_to_lib(&mut lib);
+
+        // Build the Roto runtime
         let mut runtime = Runtime::from_lib(lib).unwrap();
         runtime.add_io_functions();
 
